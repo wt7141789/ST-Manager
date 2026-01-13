@@ -1,51 +1,284 @@
-<!-- 世界书详情页模态框 (WI Detail Modal) -->
-<div x-data="wiDetailPopup" x-show="showWiDetailModal" x-cloak class="modal-overlay z-modal-std">
-    <div
-        class="bg-[var(--bg-panel)] border border-[var(--border-light)] rounded-lg shadow-2xl p-6 w-[500px] flex flex-col gap-4 text-[var(--text-main)]">
-        <div class="flex justify-between items-start border-b border-[var(--border-light)] pb-4">
-            <div class="flex items-center gap-3">
-                <span class="text-4xl">📖</span>
-                <div>
-                    <h3 class="text-lg font-bold" x-text="activeWiDetail?.name"></h3>
-                    <div class="flex gap-2 mt-1">
-                        <span class="wi-badge" :class="activeWiDetail?.type" x-text="activeWiDetail?.type"></span>
-                        <span class="text-xs text-gray-500"
-                            x-text="new Date(activeWiDetail?.mtime * 1000).toLocaleString()"></span>
+--- START OF FILE detail_wi_popup.html ---
+
+<!-- 世界书阅览室 (Inspector Modal) -->
+<div x-data="wiDetailPopup" x-show="showWiDetailModal" x-cloak class="modal-overlay z-modal-std flex items-center justify-center p-4">
+    
+    <!-- 模态框主体 -->
+    <div class="bg-[var(--bg-panel)] border border-[var(--border-light)] rounded-xl shadow-2xl flex flex-col md:flex-row w-full max-w-6xl h-[85vh] overflow-hidden relative animate-scale-in"
+         @click.self="activeEntry = null">
+
+        <!-- === 左侧：书本元数据与操作区 (固定宽度 280px) === -->
+        <div class="w-full md:w-[280px] flex-shrink-0 bg-[var(--bg-sub)] border-b md:border-b-0 md:border-r border-[var(--border-main)] flex flex-col h-full z-10 relative">
+            
+            <!-- 1. 顶部标头 -->
+            <div class="p-5 border-b border-[var(--border-light)]">
+                <div class="flex items-start gap-3">
+                    <div class="text-4xl select-none filter drop-shadow-sm">📖</div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-base font-bold leading-tight line-clamp-2" :title="activeWiDetail?.name" x-text="activeWiDetail?.name || '未命名世界书'"></h3>
+                        
+                        <!-- 修改时间与徽章 -->
+                        <div class="mt-2 space-y-1">
+                            <div class="flex flex-wrap gap-1.5">
+                                <span class="wi-badge relative top-0 right-0" :class="activeWiDetail?.type" x-text="activeWiDetail?.type"></span>
+                                <span x-show="activeWiDetail?.name_source === 'filename'" class="wi-badge file relative top-0 right-0">FILE</span>
+                            </div>
+                            <!-- 时间显示 -->
+                            <div class="text-[10px] text-gray-500 font-mono flex items-center gap-1 opacity-80">
+                                <span>📅</span>
+                                <span x-text="formatDate(activeWiDetail?.mtime)"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <button @click="showWiDetailModal=false" class="text-gray-500 hover:text-white">✕</button>
+
+            <!-- 2. 统计信息 -->
+            <div class="px-5 py-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                <!-- 统计面板 -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-[var(--bg-body)] p-2 rounded border border-[var(--border-light)] text-center">
+                        <div class="text-[10px] text-gray-500 uppercase font-bold">Entries</div>
+                        <div class="text-xl font-mono font-bold text-[var(--text-main)]" x-text="wiEntries.length">0</div>
+                    </div>
+                    <div class="bg-[var(--bg-body)] p-2 rounded border border-[var(--border-light)] text-center">
+                        <div class="text-[10px] text-gray-500 uppercase font-bold">Tokens</div>
+                        <div class="text-xl font-mono font-bold text-green-500" x-text="totalTokens">0</div>
+                    </div>
+                </div>
+
+                <!-- 描述/简介 -->
+                <template x-if="description">
+                    <div class="space-y-1">
+                        <div class="text-[10px] uppercase font-bold text-gray-500">Description</div>
+                        <div class="text-xs text-[var(--text-sub)] italic bg-[var(--bg-body)] p-2 rounded border border-[var(--border-light)] max-h-32 overflow-y-auto">
+                            <span x-text="description"></span>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 路径信息 -->
+                <div class="space-y-1" x-show="activeWiDetail?.path">
+                    <div class="text-[10px] uppercase font-bold text-gray-500">Path</div>
+                    <div class="text-[10px] text-gray-500 font-mono break-all leading-tight opacity-70" x-text="activeWiDetail?.path"></div>
+                </div>
+            </div>
+
+            <!-- 3. 底部主要操作按钮 (固定底部) -->
+            <div class="p-3 border-t border-[var(--border-light)] space-y-2 bg-[var(--bg-sub)]">
+                <!-- 进入编辑器 (高亮) -->
+                <button @click="enterWiEditorFromDetail()" 
+                    class="w-full btn-primary py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold shadow-md transform transition hover:translate-y-[-1px]">
+                    <span>✏️</span> 进入全屏编辑器
+                </button>
+
+                <!-- 功能网格 -->
+                <div class="grid grid-cols-3 gap-1.5">
+                    <button @click="createSnapshot('lorebook')" class="btn-secondary py-1.5 text-xs flex flex-col items-center justify-center gap-0.5" title="快速备份">
+                        <span class="text-base">📸</span>
+                        <span class="scale-90">快照</span>
+                    </button>
+                    <button @click="openRollback()" class="btn-secondary py-1.5 text-xs flex flex-col items-center justify-center gap-0.5" title="查看历史版本">
+                        <span class="text-base">⏪</span>
+                        <span class="scale-90">回滚</span>
+                    </button>
+                    <button @click="openBackupFolder('lorebook')" class="btn-secondary py-1.5 text-xs flex flex-col items-center justify-center gap-0.5" title="打开备份文件夹">
+                        <span class="text-base">📂</span>
+                        <span class="scale-90">目录</span>
+                    </button>
+                </div>
+                
+                <!-- 删除按钮 -->
+                <template x-if="activeWiDetail?.type !== 'embedded'">
+                    <button @click="deleteCurrentWi()" class="w-full py-1 text-[10px] text-red-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors flex items-center justify-center gap-1">
+                        🗑️ 删除此文件
+                    </button>
+                </template>
+            </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-            <button @click="enterWiEditorFromDetail()"
-                class="col-span-2 btn-primary py-3 rounded-lg flex items-center justify-center gap-2 text-lg">
-                <span>✏️</span> 进入编辑器
-            </button>
+        <!-- === 右侧主区域：列表 + 详情 (相对定位容器) === -->
+        <div class="flex-1 flex flex-col h-full min-w-0 bg-[var(--bg-body)] relative overflow-hidden">
+            
+            <!-- 1. 顶部工具栏 -->
+            <div class="h-14 border-b border-[var(--border-light)] flex items-center justify-between px-4 bg-[var(--bg-sub)] flex-shrink-0 gap-4 z-10 relative">
+                
+                <!-- 搜索框 (自适应宽度) -->
+                <div class="flex-1 max-w-md relative group">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 opacity-50 text-sm">🔍</span>
+                    <input type="text" x-model="searchTerm" 
+                        class="w-full bg-[var(--bg-panel)] border border-[var(--border-light)] rounded-full pl-9 pr-8 py-1.5 text-sm focus:border-accent-main outline-none transition-all shadow-sm"
+                        placeholder="搜索关键词、内容或备注...">
+                    <button x-show="searchTerm" @click="searchTerm=''" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 p-0.5 rounded-full">✕</button>
+                </div>
 
-            <button @click="createSnapshot('lorebook')"
-                class="btn-secondary py-2 flex flex-col items-center justify-center gap-1">
-                <span>📸</span> <span>快速快照</span>
-            </button>
-            <button @click="createKeySnapshot('lorebook')"
-                class="btn-secondary py-2 flex flex-col items-center justify-center gap-1">
-                <span>🔖</span> <span>关键快照</span>
-            </button>
+                <!-- 右侧按钮组 -->
+                <div class="flex items-center gap-3">
+                    <div class="h-6 w-[1px] bg-[var(--border-light)]"></div>
+                    <button @click="showWiDetailModal=false" class="text-gray-500 hover:text-red-400 p-2 rounded-full hover:bg-[var(--bg-panel)] transition-colors" title="关闭 (Esc)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
 
-            <button @click="openRollback()"
-                class="btn-secondary py-2 flex flex-col items-center justify-center gap-1 transition-colors"
-                :class="$store.global.isDarkMode ? 'text-yellow-400 hover:text-yellow-300' : 'text-yellow-600 hover:text-yellow-700'">
-                <span>⏪</span> <span>时光机 (回滚)</span>
-            </button>
-            <button @click="openBackupFolder('lorebook')"
-                class="btn-secondary py-2 flex flex-col items-center justify-center gap-1">
-                <span>📂</span> <span>打开备份目录</span>
-            </button>
-            <button x-show="activeWiDetail?.type !== 'embedded'" 
-                @click="deleteCurrentWi()"
-                class="col-span-2 mt-2 py-2 rounded border border-red-500/50 text-red-400 hover:bg-red-500/10 transition flex items-center justify-center gap-2">
-                <span>🗑️</span> 删除此世界书
-            </button>
+            <!-- 2. 内容区域 (Stack Context) -->
+            <div class="flex-1 relative w-full h-full">
+                
+                <!-- A. 条目列表 (底层，全宽) -->
+                <div class="absolute inset-0 overflow-y-auto p-4 custom-scrollbar bg-dots-pattern">
+                    
+                    <div x-show="isLoading" class="h-full flex flex-col items-center justify-center text-gray-500 gap-4">
+                        <div class="text-4xl animate-bounce">⏳</div>
+                        <p class="text-sm">正在读取卷宗...</p>
+                    </div>
+
+                    <!-- Grid 布局：不再根据 activeEntry 改变列数，保持稳定 -->
+                    <div x-show="!isLoading" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 pb-10">
+                        <template x-for="(entry, idx) in filteredEntries" :key="entry.id || idx">
+                            <div class="wi-inspect-card group" 
+                                 :class="{'active ring-2 ring-accent-main ring-offset-2 ring-offset-[var(--bg-body)]': activeEntry === entry}"
+                                 @click="selectEntry(entry)"
+                                 @dblclick="enterWiEditorFromDetail(entry)"> <!-- 支持双击条目直接跳转 -->
+                                
+                                <div class="wi-inspect-status-bar" 
+                                     :class="{
+                                        'bg-blue-500': entry.constant,
+                                        'bg-purple-500': !entry.constant && entry.vectorized,
+                                        'bg-green-500': !entry.constant && !entry.vectorized && entry.enabled,
+                                        'bg-gray-600': !entry.enabled
+                                     }">
+                                </div>
+
+                                <div class="p-3 flex flex-col h-full gap-1.5 overflow-hidden flex-1">
+                                    <div class="flex justify-between items-start gap-2 min-h-[1.25rem]">
+                                        <div class="font-bold text-xs font-mono text-accent-main break-all line-clamp-2"
+                                             x-text="formatWiKeys(entry.keys) || '(无触发词)'"></div>
+                                        <span class="text-[9px] font-mono bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-500 flex-shrink-0">
+                                            #<span x-text="entry.insertion_order"></span>
+                                        </span>
+                                    </div>
+                                    <div class="text-[11px] text-[var(--text-sub)] line-clamp-3 flex-1 whitespace-pre-wrap font-sans opacity-80"
+                                         x-text="entry.content || '(无内容)'"></div>
+                                    <div class="pt-2 border-t border-[var(--border-light)] mt-auto flex justify-between items-center">
+                                        <span class="text-[9px] uppercase font-bold truncate max-w-[70%]" 
+                                              :class="entry.comment ? 'text-gray-500' : 'text-gray-300 italic'"
+                                              x-text="entry.comment || 'Untitled'"></span>
+                                        <span class="text-[9px] font-mono text-gray-400" x-text="estimateTokens(entry.content) + ' T'"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- 空状态 -->
+                    <div x-show="!isLoading && filteredEntries.length === 0" class="flex flex-col items-center justify-center py-20 opacity-50">
+                        <div class="text-4xl grayscale mb-2">🍃</div>
+                        <p class="text-sm">没有找到相关条目</p>
+                    </div>
+                </div>
+
+                <!-- B. 条目详情面板 (绝对定位 Overlay) -->
+                <!-- 改用 absolute 覆盖在网格之上，避免 flex 挤压导致的网格重排 -->
+                <div class="absolute top-0 right-0 bottom-0 w-[320px] xl:w-[400px] border-l border-[var(--border-main)] bg-[var(--bg-panel)] flex flex-col shadow-2xl z-30"
+                     x-show="activeEntry"
+                     style="box-shadow: -10px 0 30px rgba(0,0,0,0.2);"
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="translate-x-full"
+                     x-transition:enter-end="translate-x-0"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="translate-x-0"
+                     x-transition:leave-end="translate-x-full">
+
+                    <!-- 面板头部 -->
+                    <div class="h-10 border-b border-[var(--border-light)] flex items-center justify-between px-3 bg-[var(--bg-sub)] flex-shrink-0">
+                        <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Entry Details</span>
+                        <button @click="activeEntry = null" class="text-gray-500 hover:text-[var(--text-main)] px-2">✕</button>
+                    </div>
+
+                    <!-- 面板内容 -->
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                        <template x-if="activeEntry">
+                            <div class="space-y-4">
+                                <!-- 备注与开关 -->
+                                <div class="flex items-center justify-between">
+                                    <h4 class="font-bold text-lg text-[var(--text-main)] break-all" 
+                                        x-text="activeEntry.comment || '未命名条目'"></h4>
+                                    
+                                    <div class="flex items-center gap-2">
+                                        <div class="px-2 py-0.5 rounded text-[10px] font-bold border uppercase"
+                                             :class="activeEntry.enabled ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-gray-500/10 border-gray-500/30 text-gray-500'">
+                                            <span x-text="activeEntry.enabled ? 'Enabled' : 'Disabled'"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 关键词组 -->
+                                <div class="space-y-2">
+                                    <div>
+                                        <label class="text-[10px] text-gray-500 uppercase font-bold block mb-1">Primary Keys</label>
+                                        <div class="p-2 bg-[var(--bg-body)] border border-[var(--border-light)] rounded text-xs font-mono text-yellow-500 break-words select-text">
+                                            <span x-text="formatWiKeys(activeEntry.keys)"></span>
+                                        </div>
+                                    </div>
+                                    <template x-if="activeEntry.secondary_keys && activeEntry.secondary_keys.length > 0">
+                                        <div>
+                                            <label class="text-[10px] text-gray-500 uppercase font-bold block mb-1">Secondary Keys</label>
+                                            <div class="p-2 bg-[var(--bg-body)] border border-[var(--border-light)] rounded text-xs font-mono text-teal-500 break-words select-text">
+                                                <span x-text="formatWiKeys(activeEntry.secondary_keys)"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <!-- 内容展示 -->
+                                <div>
+                                    <div class="flex justify-between items-end mb-1">
+                                        <label class="text-[10px] text-gray-500 uppercase font-bold">Content</label>
+                                        <span class="text-[10px] text-gray-400 font-mono" x-text="estimateTokens(activeEntry.content) + ' Tokens'"></span>
+                                    </div>
+                                    <div class="p-3 bg-[var(--bg-body)] border border-[var(--border-light)] rounded text-sm text-[var(--text-main)] whitespace-pre-wrap font-sans leading-relaxed select-text min-h-[100px] border-l-4"
+                                         :class="{'border-l-blue-500': activeEntry.constant, 'border-l-green-500': !activeEntry.constant}">
+                                        <span x-text="activeEntry.content"></span>
+                                    </div>
+                                </div>
+
+                                <!-- 属性表格 -->
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="p-2 border border-[var(--border-light)] rounded bg-[var(--bg-body)]">
+                                        <div class="text-[9px] text-gray-500 uppercase">Order</div>
+                                        <div class="font-mono font-bold" x-text="activeEntry.insertion_order"></div>
+                                    </div>
+                                    <div class="p-2 border border-[var(--border-light)] rounded bg-[var(--bg-body)]">
+                                        <div class="text-[9px] text-gray-500 uppercase">Position</div>
+                                        <div class="font-mono font-bold" x-text="activeEntry.position"></div>
+                                    </div>
+                                    <div class="p-2 border border-[var(--border-light)] rounded bg-[var(--bg-body)]">
+                                        <div class="text-[9px] text-gray-500 uppercase">Strategy</div>
+                                        <div class="font-bold" x-text="activeEntry.constant ? 'Constant' : (activeEntry.vectorized ? 'Vector' : 'Normal')"></div>
+                                    </div>
+                                    <div class="p-2 border border-[var(--border-light)] rounded bg-[var(--bg-body)]">
+                                        <div class="text-[9px] text-gray-500 uppercase">Selective</div>
+                                        <div class="font-bold" x-text="activeEntry.selective ? 'Yes' : 'No'"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- 底部：编辑当前条目 -->
+                    <div class="p-3 border-t border-[var(--border-light)] bg-[var(--bg-sub)]">
+                        <!-- 注意：这里传递 activeEntry 以便跳转到特定索引 -->
+                        <button @click="enterWiEditorFromDetail(activeEntry)" 
+                                class="w-full btn-secondary py-2 text-xs flex items-center justify-center gap-2 font-bold hover:bg-accent-main hover:text-white transition-colors">
+                            <span>🛠️</span> 去编辑器修改此条目
+                        </button>
+                    </div>
+
+                </div>
+
+            </div>
         </div>
     </div>
 </div>

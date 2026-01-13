@@ -189,15 +189,37 @@ export default function wiEditor() {
                 if (dataObj.character_book) {
                     dataObj.character_book = normalizeWiBook(dataObj.character_book, dataObj.char_name || "WI");
                 }
-                // ===================================
 
                 // 赋值给响应式对象
                 this.editingData = dataObj;
                 this.editingWiFile = item; 
-                this.currentWiIndex = 0;
+                let targetIndex = 0;
+                if (typeof item.jumpToIndex === 'number' && item.jumpToIndex >= 0) {
+                    targetIndex = item.jumpToIndex;
+                }
+                this.currentWiIndex = targetIndex;
                 this.isLoading = false;
                 
                 this.openFullScreenWI();
+
+                // 滚动到选中项
+                if (targetIndex >= 0) {
+                    this.$nextTick(() => {
+                        // 稍微延迟以等待列表渲染
+                        setTimeout(() => {
+                            // 再次强制设置一次 index，防止 openFullScreenWI 里有重置逻辑干扰
+                            this.currentWiIndex = targetIndex;
+                            
+                            const elId = `wi-item-${targetIndex}`;
+                            const el = document.getElementById(elId);
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'auto', block: 'center' }); // 使用 auto 瞬间定位，避免 smooth 还没滚到就停止
+                                el.classList.add('bg-accent-main', 'text-white'); // 临时高亮
+                                setTimeout(() => el.classList.remove('bg-accent-main', 'text-white'), 800);
+                            }
+                        }, 100);
+                    });
+                }
             };
 
             // 1. 内嵌类型 (Embedded): 获取角色卡数据

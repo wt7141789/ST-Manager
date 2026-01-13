@@ -626,3 +626,65 @@ input[type="checkbox"] {
     height: 2px;
     background-color: var(--accent-main);
 }
+
+/* === 世界书阅览室 (Inspector) 样式 === */
+
+/* 1. 阅览室卡片 */
+.wi-inspect-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 120px; /* 稍微调低高度，更紧凑 */
+    display: flex;
+    cursor: pointer;
+    user-select: none;
+}
+
+.wi-inspect-card:hover {
+    border-color: var(--accent-light);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* 选中态 */
+.wi-inspect-card.active {
+    border-color: var(--accent-main);
+    background-color: color-mix(in srgb, var(--accent-main), transparent 95%);
+}
+
+.wi-inspect-status-bar {
+    width: 4px;
+    height: 100%;
+    flex-shrink: 0;
+}
+
+/* 2. 背景纹理 */
+.bg-dots-pattern {
+    background-image: radial-gradient(var(--border-light) 1px, transparent 1px);
+    background-size: 16px 16px;
+}
+
+/* 3. 详情面板动画与样式 */
+/* 使用 x-transition 实现滑入滑出，这里只需定义基础 */
+.wi-inspect-detail-panel {
+    /* 样式已在 Tailwind classes 中定义，此处仅作备注 */
+    box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+}
+
+/* 4. 文件类型徽章 */
+.wi-badge.file {
+    background: rgba(55, 65, 81, 0.8); 
+    color: #e5e7eb; 
+    border-color: #6b7280;
+}
+html.light-mode .wi-badge.file {
+    background: #f3f4f6; color: #374151; border-color: #d1d5db;
+}
+
+/* 5. 搜索框聚焦光晕 */
+input:focus {
+    box-shadow: 0 0 0 2px var(--accent-faint);
+}

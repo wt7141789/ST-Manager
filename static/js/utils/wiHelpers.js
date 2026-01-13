@@ -136,10 +136,19 @@ export const wiHelpers = {
             path = contextItem.path || "";
             name = contextItem.name || "World Info";
 
-            // 如果在编辑器模式下，尝试获取实时内容
-            if (this.showFullScreenWI && typeof this._getAutoSavePayload === 'function') {
+            // 尝试获取内容
+            // 1. 如果在编辑器中，且有 _getAutoSavePayload 方法
+            if (typeof this._getAutoSavePayload === 'function') {
                 const payload = this._getAutoSavePayload();
                 content = payload.content;
+            } 
+            // 2. 如果在阅览室 (DetailPopup) 中，且已经加载了 wiData
+            else if (this.wiData) {
+                // 重新包装一下以符合 V3 格式
+                content = {
+                    ...this.wiData,
+                    entries: this.wiEntries // 使用当前的 entry 数组
+                };
             }
         }
 
@@ -170,7 +179,6 @@ export const wiHelpers = {
         .then(res => {
             if (!isSilent) this.$store.global.isLoading = false;
             if (res.success) {
-                // 始终显示 Toast 反馈
                 this.$store.global.showToast("📸 快照已保存", 2000);
             } else {
                 alert("备份失败: " + res.msg);
