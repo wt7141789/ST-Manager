@@ -2022,13 +2022,24 @@ def api_create_folder():
         suppress_fs_events(1.5)
         data = request.json
         base = CARDS_FOLDER
+        parent_rel = ""
         if data.get('parent') and data.get('parent') != "根目录":
             parent_rel = data.get('parent').replace('/', os.sep)
-            base = os.path.join(CARDS_FOLDER, data.get('parent'))
-        new_folder_path = os.path.join(base, data.get('name'))
+            base = os.path.join(CARDS_FOLDER, parent_rel)
+        new_folder_name = data.get('name')
+        new_folder_path = os.path.join(base, new_folder_name)
         if os.path.exists(new_folder_path):
              return jsonify({"success": False, "msg": "文件夹已存在"})
         os.makedirs(new_folder_path, exist_ok=True)
+        new_rel_path = new_folder_name
+        if data.get('parent') and data.get('parent') != "根目录":
+            new_rel_path = f"{data.get('parent')}/{new_folder_name}"
+            
+        with ctx.cache.lock:
+            if new_rel_path not in ctx.cache.visible_folders:
+                ctx.cache.visible_folders.append(new_rel_path)
+                # 重新排序以保持美观
+                ctx.cache.visible_folders.sort()
         schedule_reload(reason="create_folder")
         return jsonify({"success": True})
     except Exception as e:
@@ -2150,7 +2161,7 @@ def api_rename_folder():
 @bp.route('/api/delete_folder', methods=['POST'])
 def api_delete_folder():
     try:
-        # 1. 抑制文件系统事件，因为我们将进行大量移动/删除操作
+        # 1. 抑制文件系统事件 (因为涉及大量移动)
         suppress_fs_events(6.0)
         
         folder_path = request.json.get('folder_path')
@@ -2161,180 +2172,180 @@ def api_delete_folder():
         if ".." in folder_path or folder_path.startswith("/") or folder_path.startswith("\\"):
              return jsonify({"success": False, "msg": "非法路径"})
 
-        target_dir = os.path.join(CARDS_FOLDER, folder_path)
-        # 删除文件夹通常意味着“解散”，即将内容移到上一级
-        parent_dir = os.path.dirname(target_dir)
+        # 源目录和目标父目录
+        target_dir = os.path.join(CARDS_FOLDER, folder_path.replace('/', os.sep))
+        parent_dir = os.path.dirname(target_dir) # 移动到上一级
 
         if not os.path.exists(target_dir):
              return jsonify({"success": False, "msg": "文件夹不存在"})
         
         ui_data = load_ui_data()
         ui_changed = False
-        moved_details = []
-
         conn = get_db()
         cursor = conn.cursor()
 
-        # === 阶段 1: 收集阶段 (只读) ===
-        # 先遍历并收集所有有效的角色卡文件，不进行移动，防止破坏 os.walk 的迭代
-        # 我们使用 list 存储，以便稍后排序
-        files_to_process = []
+        # === 核心逻辑：将 target_dir 下的所有内容（文件和文件夹）移动到 parent_dir ===
         
-        for root, dirs, files in os.walk(target_dir):
-            for f in files:
-                # 只处理受支持的卡片文件，垃圾文件留给最后整体删除
-                if is_card_file(f): 
-                    full_src_path = os.path.join(root, f)
-                    files_to_process.append(full_src_path)
-
-        # 排序：让 .json 排在同名 .png 前面处理
-        # 这样处理 json 时能顺便把伴生图带走，逻辑更清晰
-        files_to_process.sort(key=lambda x: 0 if x.lower().endswith('.json') else 1)
-        
-        processed_files = set() # 记录已处理的绝对路径（防止 PNG 被处理两次）
-
-        # === 阶段 2: 执行阶段 (移动) ===
-        for src_full_path in files_to_process:
-            if src_full_path in processed_files:
-                continue
-
-            filename = os.path.basename(src_full_path)
-            current_root = os.path.dirname(src_full_path)
-            
-            # 标记为主文件已处理
-            processed_files.add(src_full_path)
-
-            # --- 伴生图逻辑 ---
-            sidecar_filename = None
-            sidecar_ext = None
-            sidecar_full_path = None
-            
-            name_part, ext_part = os.path.splitext(filename)
-            
-            # 如果是 JSON，尝试查找同一目录下的伴生图
-            if ext_part.lower() == '.json':
-                for ext in SIDECAR_EXTENSIONS:
-                    test_sidecar = os.path.join(current_root, name_part + ext)
-                    # 检查该文件是否在我们要处理的列表中（或者存在于磁盘）
-                    if os.path.exists(test_sidecar):
-                        sidecar_filename = name_part + ext
-                        sidecar_ext = ext
-                        sidecar_full_path = test_sidecar
-                        processed_files.add(test_sidecar) # 标记伴生图已处理
-                        break
-            
-            # --- 冲突检测与重命名 ---
-            # 我们要找到一个名字，使得主文件和伴生图在 parent_dir 都不存在
-            counter = 0
-            final_filename = filename
-            
-            while True:
-                if counter > 0:
-                    final_filename = f"{name_part}_{counter}{ext_part}"
-                
-                # 检查主文件冲突
-                dst_test_main = os.path.join(parent_dir, final_filename)
-                conflict = os.path.exists(dst_test_main)
-                
-                # 如果主文件没冲突，且有伴生图，检查伴生图冲突
-                if not conflict and sidecar_filename:
-                    final_sidecar_name = f"{name_part}_{counter}{sidecar_ext}" if counter > 0 else sidecar_filename
-                    dst_test_sidecar = os.path.join(parent_dir, final_sidecar_name)
-                    if os.path.exists(dst_test_sidecar):
-                        conflict = True
-                
-                if not conflict:
-                    break # 找到安全文件名，跳出循环
-                counter += 1
-
-            # --- 执行移动操作 ---
-            try:
-                # 1. 移动主文件
-                dst_full_path = os.path.join(parent_dir, final_filename)
-                shutil.move(src_full_path, dst_full_path)
-                
-                # 2. 移动伴生图 (如果有)
-                if sidecar_filename:
-                    final_sidecar_name = f"{name_part}_{counter}{sidecar_ext}" if counter > 0 else sidecar_filename
-                    dst_sidecar_path = os.path.join(parent_dir, final_sidecar_name)
-                    shutil.move(sidecar_full_path, dst_sidecar_path)
-
-                # --- 更新元数据 ---
-                old_id = os.path.relpath(src_full_path, CARDS_FOLDER).replace('\\', '/')
-                new_id = os.path.relpath(dst_full_path, CARDS_FOLDER).replace('\\', '/')
-                
-                new_cat = os.path.relpath(parent_dir, CARDS_FOLDER).replace('\\', '/')
-                if new_cat == ".": new_cat = ""
-
-                # 更新 UI Data Key
-                if old_id in ui_data:
-                    ui_data[new_id] = ui_data[old_id]
-                    del ui_data[old_id]
-                    ui_changed = True
-
-                # 更新数据库
-                cursor.execute("""
-                    UPDATE card_metadata 
-                    SET id = ?, category = ? 
-                    WHERE id = ?
-                """, (new_id, new_cat, old_id))
-
-                # 更新内存缓存
-                # 注意：如果 old_id 在缓存中不存在（极为罕见），需要容错
-                old_card_data = ctx.cache.id_map.get(old_id)
-                old_cat_val = old_card_data['category'] if old_card_data else folder_path
-                
-                ctx.cache.move_card_update(
-                    old_id, new_id, old_cat_val, new_cat, final_filename, dst_full_path
-                )
-
-                moved_details.append({
-                    "old_id": old_id,
-                    "new_id": new_id,
-                    "new_filename": final_filename,
-                    "new_category": new_cat
-                })
-            
-            except Exception as move_err:
-                logger.error(f"Failed to move file {filename}: {move_err}")
-                continue
-
-        # === 阶段 3: 提交与清理 ===
-        conn.commit()
-
-        if ui_changed: 
-            save_ui_data(ui_data)
-        
-        # 将原文件夹（此时应该只剩下不支持的文件或空目录）移入回收站
-        # 这比 shutil.rmtree 更安全，也比 os.rmdir 更彻底（防止有 .DS_Store 等垃圾文件导致无法删除）
+        # 获取直接子项
         try:
-            safe_move_to_trash(target_dir, TRASH_FOLDER)
-        except Exception as e:
-            logger.warning(f"Could not trash folder structure: {e}")
+            items = os.listdir(target_dir)
+        except OSError as e:
+            return jsonify({"success": False, "msg": f"无法读取目录: {e}"})
 
-        # 更新全局缓存中的可见文件夹列表
-        # 从 visible_folders 中移除以该路径开头的所有条目
-        with ctx.cache.lock:
-            prefix = folder_path + '/'
-            ctx.cache.visible_folders = [
-                f for f in ctx.cache.visible_folders 
-                if f != folder_path and not f.startswith(prefix)
-            ]
-            # 清理计数缓存
-            keys_to_del = [k for k in ctx.cache.category_counts if k == folder_path or k.startswith(prefix)]
-            for k in keys_to_del:
-                del ctx.cache.category_counts[k]
+        moved_count = 0
+
+        file_groups = {}
+        dirs = []
+        
+        for item in items:
+            full_src = os.path.join(target_dir, item)
+            if os.path.isdir(full_src):
+                dirs.append(item)
+            else:
+                base, ext = os.path.splitext(item)
+                if base not in file_groups:
+                    file_groups[base] = []
+                file_groups[base].append((ext, item)) # (后缀, 完整原名)
+
+        # 2. 处理文件组 (Files)
+        for base_name, files in file_groups.items():
+            # 检测冲突：如果目标目录已存在该组中 *任意* 一个文件，则整组都需要重命名
+            # 例如：源有 A.json, A.png。目标有 A.png。则源的两者都要改为 A_1.json, A_1.png
+            
+            conflict = False
+            for ext, _ in files:
+                if os.path.exists(os.path.join(parent_dir, base_name + ext)):
+                    conflict = True
+                    break
+            
+            final_base_name = base_name
+            if conflict:
+                counter = 1
+                while True:
+                    test_base = f"{base_name}_{counter}"
+                    # 检查新名字是否冲突
+                    sub_conflict = False
+                    for ext, _ in files:
+                        if os.path.exists(os.path.join(parent_dir, test_base + ext)):
+                            sub_conflict = True
+                            break
+                    if not sub_conflict:
+                        final_base_name = test_base
+                        break
+                    counter += 1
+            
+            # 执行移动
+            for ext, original_filename in files:
+                src_path = os.path.join(target_dir, original_filename)
+                new_filename = final_base_name + ext
+                dst_path = os.path.join(parent_dir, new_filename)
+                
+                try:
+                    shutil.move(src_path, dst_path)
+                    moved_count += 1
+                    
+                    # 数据库更新 (仅针对 .png/.json 角色卡文件)
+                    if is_card_file(original_filename):
+                        old_rel_id = f"{folder_path}/{original_filename}"
+                        parent_rel = os.path.dirname(folder_path)
+                        # 注意：parent_rel 为空时，ID 就是 filename
+                        new_rel_id = f"{parent_rel}/{new_filename}" if parent_rel else new_filename
+                        
+                        # 更新 DB
+                        cursor.execute("UPDATE card_metadata SET id = ?, category = ? WHERE id = ?", 
+                                      (new_rel_id, parent_rel, old_rel_id))
+                        
+                        # 更新 UI Data
+                        if old_rel_id in ui_data:
+                            ui_data[new_rel_id] = ui_data[old_rel_id]
+                            del ui_data[old_rel_id]
+                            ui_changed = True
+                            
+                        # 更新缓存 (单卡)
+                        ctx.cache.move_card_update(old_rel_id, new_rel_id, folder_path, parent_rel, new_filename, dst_path)
+                        
+                except Exception as e:
+                    logger.error(f"Error moving file {original_filename}: {e}")
+
+        # 3. 处理子文件夹 (Dirs)
+        for dir_name in dirs:
+            src_path = os.path.join(target_dir, dir_name)
+            dst_path = os.path.join(parent_dir, dir_name)
+            
+            final_dir_name = dir_name
+            # 冲突检测
+            if os.path.exists(dst_path):
+                counter = 1
+                while True:
+                    test_name = f"{dir_name}_{counter}"
+                    if not os.path.exists(os.path.join(parent_dir, test_name)):
+                        final_dir_name = test_name
+                        dst_path = os.path.join(parent_dir, test_name)
+                        break
+                    counter += 1
+            
+            try:
+                shutil.move(src_path, dst_path)
+                moved_count += 1
+                
+                # 更新数据库 (递归前缀更新)
+                old_prefix = f"{folder_path}/{dir_name}"
+                parent_rel = os.path.dirname(folder_path)
+                new_prefix = f"{parent_rel}/{final_dir_name}" if parent_rel else final_dir_name
+                
+                escaped_old_prefix = old_prefix.replace('_', r'\_').replace('%', r'\%')
+                
+                cursor.execute(f"SELECT id FROM card_metadata WHERE id LIKE ? || '/%' ESCAPE '\\'", (escaped_old_prefix,))
+                rows = cursor.fetchall()
+                
+                for row in rows:
+                    curr_id = row[0]
+                    new_id = curr_id.replace(old_prefix, new_prefix, 1)
+                    
+                    cursor.execute("UPDATE card_metadata SET id = ? WHERE id = ?", (new_id, curr_id))
+                    cursor.execute("UPDATE card_metadata SET category = REPLACE(category, ?, ?) WHERE id = ?", 
+                                  (old_prefix, new_prefix, new_id))
+                
+                # Bundle UI Data 更新
+                if old_prefix in ui_data:
+                    ui_data[new_prefix] = ui_data[old_prefix]
+                    del ui_data[old_prefix]
+                    ui_changed = True
+                
+                # 缓存更新
+                ctx.cache.move_folder_update(old_prefix, new_prefix)
+                
+            except Exception as e:
+                logger.error(f"Error moving subfolder {dir_name}: {e}")
+
+        conn.commit()
+        if ui_changed: save_ui_data(ui_data)
+
+        # 4. 删除原空文件夹
+        try:
+            os.rmdir(target_dir)
+            with ctx.cache.lock:
+                if folder_path in ctx.cache.visible_folders:
+                    ctx.cache.visible_folders.remove(folder_path)
+        except Exception as e:
+            logger.warning(f"Could not remove source dir {target_dir} (might not be empty): {e}")
+            if safe_move_to_trash(target_dir, TRASH_FOLDER):
+                with ctx.cache.lock:
+                    if folder_path in ctx.cache.visible_folders:
+                        ctx.cache.visible_folders.remove(folder_path)
+
+        # 5. 触发刷新
+        schedule_reload(reason="delete_folder")
 
         return jsonify({
             "success": True, 
-            "moved_details": moved_details,
-            "msg": f"已解散文件夹，{len(moved_details)} 张卡片已移至上级目录。"
+            "moved_count": moved_count,
+            "msg": f"文件夹已解散，{moved_count} 个项目已移至上级目录。"
         })
 
     except Exception as e:
         logger.error(f"Delete folder error: {e}")
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"success": False, "msg": str(e)})
 
 @bp.route('/api/move_folder', methods=['POST'])
@@ -2475,16 +2486,6 @@ def api_move_folder():
                             s_dst = os.path.join(dst_dir, base_dst + ext)
                             shutil.move(s_src, s_dst)
 
-        # 这里的合并逻辑其实相当于“打散”了，原本的 update_folder_cache 并不适用
-        # 因为文件可能发生了重命名。
-        # 简化处理：合并模式下，我们直接使用全量扫描更安全，或者只对数据库做单文件更新
-        # 考虑到“合并文件夹”操作频率较低，为了数据准确性，
-        # 我们在这里做一次【特殊的处理】：
-        # 1. 删除旧文件夹的 DB 记录
-        # 2. 扫描新文件夹并插入 DB
-        # 3. 重新加载
-        # 这是最稳妥的，因为合并涉及太多的路径变化和重命名。
-        
         # 删除源文件夹 (此时应为空)
         try: shutil.rmtree(source_full_path)
         except: pass

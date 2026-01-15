@@ -297,6 +297,27 @@ class GlobalMetadataCache:
 
         with self.lock:
             try:
+                physical_folders = set()
+                try:
+                    for root, dirs, files in os.walk(CARDS_FOLDER):
+                        # 排除以 . 开头的隐藏目录 (如 .trash, .git)
+                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        
+                        # 计算相对路径
+                        rel_path = os.path.relpath(root, CARDS_FOLDER)
+                        if rel_path == ".":
+                            # 根目录下的子文件夹
+                            for d in dirs:
+                                physical_folders.add(d)
+                        else:
+                            # 子目录下的子文件夹
+                            current_rel = rel_path.replace('\\', '/')
+                            physical_folders.add(current_rel)
+                            for d in dirs:
+                                physical_folders.add(f"{current_rel}/{d}")
+                except Exception as fs_e:
+                    logger.error(f"Scanning physical folders failed: {fs_e}")
+
                 # 1. 加载数据
                 ui_data = load_ui_data()
                 rows = execute_with_retry(_do_fetch_all, max_retries=5)
@@ -408,7 +429,17 @@ class GlobalMetadataCache:
                 self.bundle_map = new_bundle_map
                 self.global_tags = sorted(list(new_global_tags))
                 self.category_counts = new_cat_counts
-                self.visible_folders = [f for f in sorted(list(derived_folders)) if f not in bundle_paths and f != ""]
+                all_visible = derived_folders.union(physical_folders)
+                # 过滤掉 Bundle 文件夹本身 (Bundle 应该作为卡片显示，而不是文件夹)
+                self.visible_folders = [
+                    f for f in sorted(list(all_visible)) 
+                    if f not in bundle_paths and f != "" and f != "."
+                ]
+                
+                # 确保空文件夹也有计数条目 (0)
+                for f in self.visible_folders:
+                    if f not in new_cat_counts:
+                        new_cat_counts[f] = 0
                 
                 self.initialized = True
                 logger.info(f"Cache reloaded: {len(self.cards)} items (including bundles).")

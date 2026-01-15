@@ -80,13 +80,44 @@ export default function contextMenu() {
         // 删除
         handleDelete() {
             if (this.type === 'folder') {
-                if(!confirm(`确定删除文件夹 "${this.target}" 及其内容吗？`)) return;
-                deleteFolder({ folder_path: this.target }).then(res => {
+                const store = Alpine.store('global');
+                const path = this.target;
+
+                // 1. 获取卡片计数 (防止 undefined 默认为 0)
+                const cardCount = (store.categoryCounts && store.categoryCounts[path]) || 0;
+
+                // 2. 检查是否有子文件夹
+                // 遍历 allFoldersList，看是否有路径以 "path/" 开头的
+                const hasSubfolders = store.allFoldersList.some(f => 
+                    f.path.startsWith(path + '/') && f.path !== path
+                );
+
+                // 3. 判断是否需要确认
+                // 如果既有卡片又有子文件夹，或者其中之一存在，则需要确认 (因为涉及移动文件)
+                // 只有完全为空时，才跳过确认
+                const isEmpty = (cardCount === 0 && !hasSubfolders);
+
+                if (!isEmpty) {
+                    const msg = `确定删除文件夹 "${path}" 吗？\n\n该文件夹包含 ${cardCount} 张卡片` + 
+                                (hasSubfolders ? " 和子文件夹" : "") + 
+                                "。\n\n删除后，内部文件将**移动到上一级目录** (文件夹解散)。";
+                    
+                    if (!confirm(msg)) return;
+                }
+
+                // 执行删除
+                deleteFolder({ folder_path: path }).then(res => {
                     if(res.success) {
+                        // 刷新文件夹树和卡片列表
                         window.dispatchEvent(new CustomEvent('refresh-folder-list'));
+                        // 即使是空文件夹，删除后也建议刷新列表，确保同步
                         window.dispatchEvent(new CustomEvent('refresh-card-list'));
-                    } else alert(res.msg);
+                    } else {
+                        alert(res.msg);
+                    }
                 });
+                
+                this.visible = false;
             }
         },
 

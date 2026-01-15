@@ -63,6 +63,12 @@ export default function sidebar() {
             });
         },
 
+        init() {
+            window.addEventListener('refresh-folder-list', () => {
+                window.dispatchEvent(new CustomEvent('refresh-card-list'));
+            });
+        },
+
         openTagFilter() {
             window.dispatchEvent(new CustomEvent('open-tag-filter-modal'));
         },
