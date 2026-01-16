@@ -1,7 +1,6 @@
 /* =========================================
    8. 标签选择器 (Tag Picker)
    ========================================= */
-.large-editor-textarea,
 .tag-modal-container { 
     width: 800px; max-width: 90vw; height: 70vh; 
     background: var(--bg-panel); 
