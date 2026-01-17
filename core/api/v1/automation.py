@@ -112,7 +112,11 @@ def execute_rules():
             'character_book', 'extensions', # 内部对象名
             'wi_name', 'wi_content',        # 世界书
             'regex_name', 'regex_content',  # 正则脚本
-            'st_script_name', 'st_script_content' # ST脚本
+            'st_script_name', 'st_script_content', # ST脚本
+            'description', 'first_mes', 'mes_example', 'alternate_greetings',
+            'personality', 'scenario', 'creator_notes', 
+            'system_prompt', 'post_history_instructions',
+            'char_version'
         }
         
         needs_deep_scan = False
@@ -148,28 +152,50 @@ def execute_rules():
             
             context_data = dict(card_obj)
             
+            ui_key = resolve_ui_key(cid)
+            ui_info = ui_data.get(ui_key, {})
+            
+            context_data['ui_summary'] = ui_info.get('summary', '')
+            context_data['source_link'] = ui_info.get('link', '')
+            
+            # file_size 可能不在缓存里，如果规则需要，实时获取
+            if 'file_size' not in context_data:
+                try:
+                    full_path = os.path.join(CARDS_FOLDER, cid.replace('/', os.sep))
+                    if os.path.exists(full_path):
+                        context_data['file_size'] = os.path.getsize(full_path)
+                    else:
+                        context_data['file_size'] = 0
+                except:
+                    context_data['file_size'] = 0
+            
             # === 如果需要深层扫描，强制读取文件 ===
             if needs_deep_scan:
-                # 检查缓存中是否已有数据 (刚上传时可能有，但重启后通常没有)
-                has_book = bool(context_data.get('character_book'))
-                has_ext = bool(context_data.get('extensions'))
-                
-                if not has_book or not has_ext:
-                    try:
-                        full_path = os.path.join(CARDS_FOLDER, cid.replace('/', os.sep))
-                        if os.path.exists(full_path):
-                            info = extract_card_info(full_path)
-                            if info:
-                                data_block = info.get('data', info) if 'data' in info else info
-                                
-                                # 补全缺失字段
-                                if 'character_book' not in context_data:
-                                    context_data['character_book'] = data_block.get('character_book')
-                                if 'extensions' not in context_data:
-                                    context_data['extensions'] = data_block.get('extensions')
+                try:
+                    full_path = os.path.join(CARDS_FOLDER, cid.replace('/', os.sep))
+                    if os.path.exists(full_path):
+                        info = extract_card_info(full_path)
+                        if info:
+                            data_block = info.get('data', info) if 'data' in info else info
+                            
+                            # 待注入的字段列表
+                            fields_to_patch = [
+                                'character_book', 'extensions',
+                                'description', 'first_mes', 'mes_example', 
+                                'alternate_greetings', 'personality', 'scenario',
+                                'creator_notes', 'system_prompt', 'post_history_instructions'
+                            ]
+                            
+                            for f in fields_to_patch:
+                                if f not in context_data or not context_data[f]:
+                                    context_data[f] = data_block.get(f)
+                            
+                            # 特殊映射: character_version -> char_version
+                            if 'char_version' not in context_data or not context_data['char_version']:
+                                context_data['char_version'] = data_block.get('character_version', '')
 
-                    except Exception as e:
-                        logger.warning(f"Deep scan failed for {cid}: {e}")
+                except Exception as e:
+                    logger.warning(f"Deep scan failed for {cid}: {e}")
                         
             if 'token_count' not in context_data:
                  # 简单补全，防止报错
