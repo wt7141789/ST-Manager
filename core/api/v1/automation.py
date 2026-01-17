@@ -107,54 +107,67 @@ def execute_rules():
 
         if not ctx.cache.initialized: ctx.cache.reload_from_db()
         
-        # 看规则里有没有涉及相关字段
-        deep_fields = ['character_book', 'extensions', 'wi_content', 'regex_scripts']
-        needs_deep_scan = False
-        for r in ruleset.get('rules', []):
-            if not r.get('enabled', True): continue
-            for cond in r.get('conditions', []):
-                groups = r.get('groups', [])
-                # 兼容旧版扁平结构
-                if not groups and r.get('conditions'):
-                    groups = [{'conditions': r.get('conditions')}]
-                
-                for g in groups:
-                    for cond in g.get('conditions', []):
-                        if any(f in cond['field'] for f in deep_fields) or \
-                           any(f in FIELD_MAP.get(cond['field'], '') for f in deep_fields):
-                            needs_deep_scan = True
-                            break
-                    if needs_deep_scan: break
-            if needs_deep_scan: break
+        # 定义所有属于"深层数据"的字段名 (包含 UI 字段名 和 内部数据字段名)
+        deep_trigger_keys = {
+            'character_book', 'extensions', # 内部对象名
+            'wi_name', 'wi_content',        # 世界书
+            'regex_name', 'regex_content',  # 正则脚本
+            'st_script_name', 'st_script_content' # ST脚本
+        }
         
+        needs_deep_scan = False
+
+        for r_idx, r in enumerate(ruleset.get('rules', [])):
+            if not r.get('enabled', True): continue
+            
+            # 兼容处理：确保有 groups
+            groups = r.get('groups', [])
+            if not groups and r.get('conditions'):
+                groups = [{'conditions': r.get('conditions')}]
+            
+            for g_idx, g in enumerate(groups):
+                for c_idx, cond in enumerate(g.get('conditions', [])):
+                    field_key = cond.get('field', '')
+                    mapped_key = FIELD_MAP.get(field_key, '')
+
+                    # 核心判断：只要字段名包含在触发列表中，或者其映射名在列表中
+                    if (field_key in deep_trigger_keys) or (mapped_key in deep_trigger_keys):
+                        needs_deep_scan = True
+                        break
+                if needs_deep_scan: break
+            if needs_deep_scan: break
+
+        # =================================================================
+        # 2. 执行循环
+        # =================================================================
         for cid in card_ids:
-            # 1. 查找数据
-            # 注意：如果前面的卡片移动了，ID会变，但这里 card_ids 是静态列表。
-            # 批处理时，各卡片互不影响(除非重名冲突)，所以按原始 ID 处理即可。
+            # 查找基础数据
             card_obj = ctx.cache.id_map.get(cid)
-            if not card_obj: continue
+            if not card_obj: 
+                continue
             
             context_data = dict(card_obj)
             
-            # 如果规则需要深层数据，且缓存中没有，则从文件加载
+            # === 如果需要深层扫描，强制读取文件 ===
             if needs_deep_scan:
-                # 检查缺失
+                # 检查缓存中是否已有数据 (刚上传时可能有，但重启后通常没有)
                 has_book = bool(context_data.get('character_book'))
                 has_ext = bool(context_data.get('extensions'))
                 
                 if not has_book or not has_ext:
-                    # 读取物理文件 (性能损耗换取准确性)
                     try:
                         full_path = os.path.join(CARDS_FOLDER, cid.replace('/', os.sep))
                         if os.path.exists(full_path):
                             info = extract_card_info(full_path)
                             if info:
                                 data_block = info.get('data', info) if 'data' in info else info
+                                
                                 # 补全缺失字段
                                 if 'character_book' not in context_data:
                                     context_data['character_book'] = data_block.get('character_book')
                                 if 'extensions' not in context_data:
                                     context_data['extensions'] = data_block.get('extensions')
+
                     except Exception as e:
                         logger.warning(f"Deep scan failed for {cid}: {e}")
                         
