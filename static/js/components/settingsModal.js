@@ -11,6 +11,7 @@ export default function settingsModal() {
     return {
         // === 本地状态 ===
         activeSettingTab: 'general',
+        showDiscordHelper: false,
 
         get settingsForm() { return this.$store.global.settingsForm; },
         get showSettingsModal() { 
@@ -21,6 +22,16 @@ export default function settingsModal() {
         },
 
         updateCssVariable,
+
+        copyDiscordScript(event) {
+            const code = event.currentTarget.innerText.replace('点击复制脚本', '').trim();
+            // 自动替换当前域名，方便用户直接复制
+            const finalCode = code.replace('${window.location.origin}', window.location.origin);
+            
+            navigator.clipboard.writeText(finalCode).then(() => {
+                alert('脚本已复制！请在 Discord 网页版控制台粘贴并运行。');
+            });
+        },
         
         applyFont(type) {
             // 1. 更新全局状态 (这会让按钮的高亮 :class 重新计算)

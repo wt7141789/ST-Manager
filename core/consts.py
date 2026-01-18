@@ -1,3 +1,6 @@
+# 程序版本
+APP_VERSION = 'v1.1'
+
 # 伴生图扩展名
 SIDECAR_EXTENSIONS = ['.png', '.webp', '.jpg', '.jpeg']
 
