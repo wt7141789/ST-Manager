@@ -130,12 +130,12 @@ export default function cardGrid() {
 
                 const currentViewCat = this.$store.global.viewState.filterCategory;
                 const isRecursive = this.$store.global.viewState.recursiveFilter;
-                
+
                 // 可见性检查
                 let shouldShow = false;
                 if (currentViewCat === '') {
                     // 根目录视图：如果开启递归，或者是直接上传到根目录，则显示
-                    shouldShow = (category === '') || isRecursive; 
+                    shouldShow = (category === '') || isRecursive;
                 } else {
                     // 子目录视图：必须匹配当前目录
                     // 注意：如果上传到 currentViewCat/SubDir 且开启递归，也应该显示，这里做简化处理
@@ -572,26 +572,26 @@ export default function cardGrid() {
                 method: 'POST',
                 body: formData
             })
-            .then(res => res.json())
-            .then(res => {
-                this.$store.global.isLoading = false;
-                if (res.success) {
-                    // 打开批量导入确认弹窗
-                    window.dispatchEvent(new CustomEvent('open-batch-import-modal', {
-                        detail: {
-                            batchId: res.batch_id,
-                            report: res.report,
-                            category: targetCategory
-                        }
-                    }));
-                } else {
-                    alert("准备导入失败: " + res.msg);
-                }
-            })
-            .catch(err => {
-                this.$store.global.isLoading = false;
-                alert("上传网络错误: " + err);
-            });
+                .then(res => res.json())
+                .then(res => {
+                    this.$store.global.isLoading = false;
+                    if (res.success) {
+                        // 打开批量导入确认弹窗
+                        window.dispatchEvent(new CustomEvent('open-batch-import-modal', {
+                            detail: {
+                                batchId: res.batch_id,
+                                report: res.report,
+                                category: targetCategory
+                            }
+                        }));
+                    } else {
+                        alert("准备导入失败: " + res.msg);
+                    }
+                })
+                .catch(err => {
+                    this.$store.global.isLoading = false;
+                    alert("上传网络错误: " + err);
+                });
         },
 
         insertCardSorted(newCard) {
@@ -677,6 +677,14 @@ export default function cardGrid() {
 
             const store = Alpine.store('global');
             this._suppressAutoFetch = true;
+
+            // === 在定位前清空所有过滤条件 ===
+            this._suppressAutoFetch = true;
+            store.viewState.searchQuery = '';      // 清空搜索关键词
+            store.viewState.filterTags = [];       // 清空标签筛选
+            store.viewState.searchType = 'mix';    // 重置搜索类型
+            store.viewState.filterFavorites = false; // 取消仅收藏
+
             store.isLoading = true;
 
             let requestCategory = payload.category;

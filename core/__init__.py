@@ -1,4 +1,5 @@
 import os
+import shutil
 import logging
 import threading
 import traceback
@@ -61,12 +62,14 @@ def cleanup_temp_files():
                 if os.path.isfile(full_path) or os.path.islink(full_path):
                     os.remove(full_path)
                     count += 1
-                # 如果有子目录是否需要删除？通常 temp 不应该有子目录，暂只删文件
+                elif os.path.isdir(full_path):
+                    shutil.rmtree(full_path)
+                    count += 1
             except Exception as e:
-                logger.warning(f"Failed to delete temp file {filename}: {e}")
+                logger.warning(f"Failed to delete temp item {filename}: {e}")
         
         if count > 0:
-            logger.info(f"Cleaned up {count} files in temporary directory.")
+            logger.info(f"Cleaned up {count} items in temporary directory.")
     except Exception as e:
         logger.warning(f"Error during temp directory cleanup: {e}")
 
