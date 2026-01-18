@@ -63,6 +63,45 @@ export default function sidebar() {
             });
         },
 
+        init() {
+            window.addEventListener('refresh-folder-list', () => {
+                window.dispatchEvent(new CustomEvent('refresh-card-list'));
+            });
+
+            // === 监听当前分类变化，自动展开目录树并滚动 ===
+            this.$watch('$store.global.viewState.filterCategory', (newPath) => {
+                if (!newPath) return;
+
+                // 1. 自动展开父级目录
+                const parts = newPath.split('/');
+                // 如果路径是 A/B/C，我们需要确保 A 和 A/B 都是展开状态
+                let currentPath = '';
+                for (let i = 0; i < parts.length - 1; i++) {
+                    currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+                    this.expandedFolders[currentPath] = true;
+                }
+                // 强制更新对象以触发 Alpine 响应式
+                this.expandedFolders = { ...this.expandedFolders };
+
+                // 2. 滚动到对应的文件夹条目
+                // 使用 $nextTick 确保 DOM 已经根据 expandedFolders 更新完毕
+                this.$nextTick(() => {
+                    // 查找侧边栏中所有 active 的元素，取最后一个（通常是当前选中的最深层级）
+                    const activeElements = document.querySelectorAll('.sidebar .folder-item.active');
+                    if (activeElements.length > 0) {
+                        const targetEl = activeElements[activeElements.length - 1];
+                        
+                        // 使用 scrollIntoView 将其滚动到中间
+                        targetEl.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center',
+                            inline: 'nearest'
+                        });
+                    }
+                });
+            });
+        },
+
         openTagFilter() {
             window.dispatchEvent(new CustomEvent('open-tag-filter-modal'));
         },

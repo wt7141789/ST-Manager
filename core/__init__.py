@@ -1,4 +1,5 @@
 import os
+import shutil
 import logging
 import threading
 import traceback
@@ -91,6 +92,32 @@ def create_app():
     app.register_blueprint(views.bp)       # 前端页面入口
     
     return app
+
+def cleanup_temp_files():
+    """
+    启动时清空临时目录 (data/temp)
+    """
+    try:
+        if not os.path.exists(TEMP_DIR):
+            return
+
+        count = 0
+        for filename in os.listdir(TEMP_DIR):
+            full_path = os.path.join(TEMP_DIR, filename)
+            try:
+                if os.path.isfile(full_path) or os.path.islink(full_path):
+                    os.remove(full_path)
+                    count += 1
+                elif os.path.isdir(full_path):
+                    shutil.rmtree(full_path)
+                    count += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete temp item {filename}: {e}")
+        
+        if count > 0:
+            logger.info(f"Cleaned up {count} items in temporary directory.")
+    except Exception as e:
+        logger.warning(f"Error during temp directory cleanup: {e}")
 
 def init_services():
     """
