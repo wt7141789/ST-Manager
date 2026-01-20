@@ -1,16 +1,16 @@
 <!-- 移动端：悬浮竖排菜单（导入 + 切换） -->
-<div x-show="$store.global.deviceType === 'mobile' && !$store.global.visibleSidebar" class="sidebar-toggle-button"
-    style="display:flex; flex-direction:column; gap:0.35rem; align-items:center; justify-content:center;" x-data>
+<div x-show="$store.global.deviceType === 'mobile' && !$store.global.visibleSidebar" 
+    class="sidebar-button-group"  x-data="sidebar">
     <!-- 隐藏的文件选择器：多选，仅 json/png -->
     <input type="file" x-ref="mobileImportInput" class="hidden" multiple accept=".json,.png,application/json,image/png"
         @change="handleMobileImportChange($event)" />
     <!-- 导入按钮 -->
-    <button @click="$refs.mobileImportInput.click()" class="sidebar-toggle-button" style="margin:0;">
+    <button @click="$refs.mobileImportInput.click()" class="sidebar-group-btn sidebar-group-btn-top">
         <span class="toggle-icon">⤴</span>
     </button>
     <!-- 打开侧边栏按钮 -->
     <button @click="$store.global.visibleSidebar = true; document.body.style.overflow = 'hidden';"
-        class="sidebar-toggle-button" style="margin:0;">
+        class="sidebar-group-btn sidebar-group-btn-bottom">
         <span class="toggle-icon">☰</span>
     </button>
 </div>
